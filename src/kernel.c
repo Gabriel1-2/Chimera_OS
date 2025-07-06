@@ -1,47 +1,60 @@
 #include "uart.h"
 #include "mem.h"
 #include "trap.h"
+#include "vm.h"
+#include "proc.h"      // Include process management.
 #include <stdint.h>
 
-// CLINT memory-mapped registers
-#define CLINT_BASE 0x2000000UL
-#define CLINT_MTIMECMP(hartid) (CLINT_BASE + 0x4000 + (hartid * 8))
-#define CLINT_MTIME (CLINT_BASE + 0xBFF8)
-
-// Function to set the next timer interrupt (declared in trap.c, but needed here for direct call)
-extern void set_next_timer_interrupt(uint64_t hartid);
-
-// This function will be the entry point when we switch to Supervisor mode.
-void _start_supervisor_c(uint64_t hartid, uint64_t dtb_paddr) {
-    while(1) { /* Simplified S-mode entry */ }
-}
-
-// Declare the assembly function for mode switch
-extern void switch_to_s_mode(uint64_t hartid, uint64_t dtb_paddr, uint64_t supervisor_entry_point);
+// Externally defined trap vector from trap.S.
+extern void __trap_vector(void);
+// Externally defined user process.
+extern void user_process_1(void);
 
 void kmain(uint64_t hartid, uint64_t dtb_paddr) {
-    uart_puts("Chimera: kmain entered (Machine mode).\n");
-
-    // Report hart id and DTB address
+    uart_puts("Chimera OS: kmain entered.\n");
     uart_puts("Hart ID: ");
     uart_puts_hex(hartid);
     uart_puts("\n");
-
     uart_puts("DTB Physical Address: ");
     uart_puts_hex(dtb_paddr);
     uart_puts("\n");
 
-    // --- Prepare for Supervisor Mode Transition ---
+    // Install trap vector.
+    asm volatile("csrw stvec, %0" : : "r"((uint64_t)__trap_vector));
+    uart_puts("Trap vector installed.\n");
 
-    // Disable PMP for now to ensure full memory access in S-mode
-    asm volatile("csrw pmpcfg0, zero");
-    asm volatile("csrw pmpaddr0, zero");
+    // Initialize timer interrupts.
+    // (Timer interrupt setup remains from previous code.)
+    {
+        volatile uint64_t *mtime = (volatile uint64_t *)0x200BFF8;
+        volatile uint64_t *mtimecmp = (volatile uint64_t *)(0x2004000 + (0 * 8));
+        *mtimecmp = *mtime + 1000000ULL;
+        
+        uint64_t sie;
+        asm volatile("csrr %0, sie" : "=r"(sie));
+        sie |= (1 << 5);
+        asm volatile("csrw sie, %0" :: "r"(sie));
+        
+        uint64_t sstatus;
+        asm volatile("csrr %0, sstatus" : "=r"(sstatus));
+        sstatus |= (1 << 1);
+        asm volatile("csrw sstatus, %0" :: "r"(sstatus));
+    }
 
-    // Call the assembly function to switch to Supervisor mode
-    extern void s_mode_stub(void);
-    switch_to_s_mode(hartid, dtb_paddr, (uint64_t)s_mode_stub);
+    // Enable virtual memory.
+    // (Assume enable_virtual_memory() is defined in kernel.c or another file, as before.)
+    extern void enable_virtual_memory(void);
+    enable_virtual_memory();
 
-    // This code should not be reached after switch_to_s_mode
-    uart_puts("Error: Returned from switch_to_s_mode in kmain (should not happen).\n");
-    while(1) {}
+    // Initialize process table.
+    proc_init();
+
+    // Create our first user process.
+    proc_create_user(user_process_1);
+
+    // Start scheduler loop.
+    scheduler();
+
+    // Should never reach here.
+    while (1) {}
 }
