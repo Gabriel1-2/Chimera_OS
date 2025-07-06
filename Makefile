@@ -113,11 +113,7 @@ $(TRAP_ASM_OBJ): $(SRC_DIR)/trap.S
 	@echo "[AS] Assembling $< to $(TRAP_ASM_OBJ)"
 	@$(CC) $(ASFLAGS) -c $< -o $@
 
-# Rule to assemble entry.S into entry.o
-$(ENTRY_OBJ): $(SRC_DIR)/entry.S
-	@if not exist $(OBJ_DIR) mkdir $(OBJ_DIR)
-	@echo "[AS] Assembling $< to $(ENTRY_OBJ)"
-	@$(CC) $(ASFLAGS) -c $< -o $@
+
 
 # Rule to assemble switch_to_s_mode.S into switch_to_s_mode.o
 $(SWITCH_TO_S_MODE_OBJ): $(SRC_DIR)/switch_to_s_mode.S
